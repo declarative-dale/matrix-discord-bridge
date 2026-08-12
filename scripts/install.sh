@@ -57,6 +57,8 @@ fi
 runuser -u ooye -- env PATH="/opt/node/bin:/usr/bin:/bin" \
   /opt/node/bin/npm --prefix "$OOYE_DIR" ci --omit=dev
 
+"$SCRIPT_DIR/configure-sharp-workaround.sh"
+
 install -o root -g root -m 0644 "$REPO_DIR/systemd/ooye.service" /etc/systemd/system/ooye.service
 systemctl daemon-reload
 

@@ -48,6 +48,8 @@ fi
 runuser -u ooye -- env PATH="/opt/node/bin:/usr/bin:/bin" \
   /opt/node/bin/npm --prefix "$OOYE_DIR" ci --omit=dev
 
+"$SCRIPT_DIR/configure-sharp-workaround.sh"
+
 if [[ $was_active == true ]]; then
   systemctl start ooye.service
 fi

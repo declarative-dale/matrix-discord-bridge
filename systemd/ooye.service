@@ -11,6 +11,7 @@ User=ooye
 Group=ooye
 WorkingDirectory=/opt/ooye
 Environment=NODE_ENV=production
+EnvironmentFile=-/etc/ooye-security.env
 ExecStart=/opt/node/bin/node --enable-source-maps /opt/ooye/start.js
 Restart=on-failure
 RestartSec=5s

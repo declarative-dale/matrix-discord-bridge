@@ -58,6 +58,14 @@ jobs:
             https://gitdab.com/cadence/out-of-your-element.git "$source_dir"
           test "$(git -C "$source_dir" rev-parse HEAD)" = "$OOYE_COMMIT"
           npm --prefix "$source_dir" ci --omit=dev
+          sharp_version=$(node -e \
+            'process.stdout.write(require(process.argv[1]).version)' \
+            "$source_dir/node_modules/sharp/package.json")
+          if scripts/sharp-workaround-required.sh "$sharp_version"; then
+            OOYE_ROOT="$source_dir" node security/test-sharp-workaround.cjs
+          else
+            echo "sharp $sharp_version contains the compatible fix; the VPS updater will remove the workaround."
+          fi
 
       - name: Validate proposed configuration
         run: ./scripts/validate.sh

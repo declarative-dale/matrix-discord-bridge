@@ -59,6 +59,7 @@ The installer:
 - Downloads and verifies pinned Node.js
 - Checks out the pinned OOYE tag and commit at `/opt/ooye`
 - Installs production npm dependencies
+- Enables the temporary Sharp decoder workaround when the installed Sharp is older than `0.35.0`
 - Installs `/etc/systemd/system/ooye.service`
 
 It deliberately does not run interactive setup, enable the service, edit Coolify, or handle secrets.
@@ -205,6 +206,14 @@ GitHub Actions has read-only permissions except for the scheduled update workflo
 ### Current upstream security finding
 
 As of 2026-08-12, OOYE `v3.6` resolves `sharp` below `0.35.0`. npm reports [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj), a high-severity advisory covering inherited libvips vulnerabilities. npm only offers a semver-major `sharp` update, so this repository does not force an unsupported dependency override into the upstream application.
+
+While the installed Sharp version is below `0.35.0`, [`sharp-workaround.cjs`](security/sharp-workaround.cjs) is preloaded through systemd and applies the advisory's workaround:
+
+```javascript
+sharp.block({ operation: ["VipsForeignLoadNsgif", "VipsForeignLoadTiff", "VipsForeignLoadVips"] });
+```
+
+This prevents OOYE from decoding GIF, TIFF, and VIPS images. PNG and other unblocked formats continue to work. The installer and updater inspect `/opt/ooye/node_modules/sharp/package.json`; when upstream OOYE resolves Sharp `0.35.0` or newer, they delete `/etc/ooye-security.env` and the installed preload automatically before restarting OOYE. No manual cleanup or upstream source modification is required.
 
 The scheduled security audit will remain red until a pinned stable OOYE release resolves the advisory. Review the affected image-processing paths and upstream remediation before production deployment. When a fixed stable OOYE release is published, the Monday update workflow will propose it for review.
 
