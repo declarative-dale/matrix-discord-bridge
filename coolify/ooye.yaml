@@ -1,0 +1,35 @@
+# Copy this into Coolify: Server -> Proxy -> Dynamic Configurations.
+# Replace the example hostname and verify the Docker host gateway address.
+http:
+  middlewares:
+    ooye-redirect-to-https:
+      redirectScheme:
+        scheme: https
+
+  routers:
+    ooye-http:
+      entryPoints:
+        - http
+      middlewares:
+        - ooye-redirect-to-https
+      rule: Host(`bridge.example.org`)
+      service: ooye
+
+    ooye-https:
+      entryPoints:
+        - https
+      rule: Host(`bridge.example.org`)
+      service: ooye
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    ooye:
+      loadBalancer:
+        healthCheck:
+          interval: 30s
+          path: /
+          timeout: 5s
+        servers:
+          # Common default. Confirm this against coolify-proxy before use.
+          - url: http://172.17.0.1:6693

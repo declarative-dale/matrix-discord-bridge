@@ -1,0 +1,50 @@
+name: Audit pinned OOYE dependencies
+
+on:
+  schedule:
+    - cron: "29 10 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit
+  cancel-in-progress: true
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out deployment configuration
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check out the pinned OOYE source
+        run: |
+          source config/versions.env
+          git clone --branch "$OOYE_VERSION" --depth 1 \
+            https://gitdab.com/cadence/out-of-your-element.git "$RUNNER_TEMP/ooye"
+          test "$(git -C "$RUNNER_TEMP/ooye" rev-parse HEAD)" = "$OOYE_COMMIT"
+
+      - name: Audit production dependencies
+        working-directory: ${{ runner.temp }}/ooye
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Explain failures
+        if: failure()
+        run: |
+          {
+            echo '## OOYE production dependency audit failed'
+            echo
+            echo 'Review the advisory output and upstream OOYE releases.'
+            echo 'Do not force npm audit fixes against the deployed upstream checkout.'
+          } >> "$GITHUB_STEP_SUMMARY"

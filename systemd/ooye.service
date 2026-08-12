@@ -1,0 +1,43 @@
+[Unit]
+Description=Out Of Your Element Matrix-Discord bridge
+Documentation=https://gitdab.com/cadence/out-of-your-element
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/opt/ooye/registration.yaml
+
+[Service]
+Type=simple
+User=ooye
+Group=ooye
+WorkingDirectory=/opt/ooye
+Environment=NODE_ENV=production
+ExecStart=/opt/node/bin/node --enable-source-maps /opt/ooye/start.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+
+AmbientCapabilities=
+CapabilityBoundingSet=
+LockPersonality=true
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ooye
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

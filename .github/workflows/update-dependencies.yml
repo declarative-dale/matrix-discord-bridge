@@ -1,0 +1,147 @@
+name: Propose dependency updates
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-updates
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+      old_ooye: ${{ steps.versions.outputs.old_ooye }}
+      new_ooye: ${{ steps.versions.outputs.new_ooye }}
+      new_ooye_commit: ${{ steps.versions.outputs.new_ooye_commit }}
+      old_node: ${{ steps.versions.outputs.old_node }}
+      new_node: ${{ steps.versions.outputs.new_node }}
+      new_node_sha: ${{ steps.versions.outputs.new_node_sha }}
+
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check upstream releases
+        id: versions
+        run: ./scripts/check-updates.sh
+
+      - name: Verify pinned Node.js archive
+        run: |
+          source config/versions.env
+          archive="node-$NODE_VERSION-linux-x64.tar.xz"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://nodejs.org/dist/$NODE_VERSION/$archive"
+          printf '%s  %s\n' "$NODE_LINUX_X64_SHA256" "$RUNNER_TEMP/$archive" \
+            | sha256sum --check
+
+      - name: Use proposed Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.versions.outputs.new_node }}
+
+      - name: Verify pinned OOYE checkout and dependencies
+        run: |
+          source config/versions.env
+          source_dir=$(mktemp -d)
+          git clone --branch "$OOYE_VERSION" --depth 1 \
+            https://gitdab.com/cadence/out-of-your-element.git "$source_dir"
+          test "$(git -C "$source_dir" rev-parse HEAD)" = "$OOYE_COMMIT"
+          npm --prefix "$source_dir" ci --omit=dev
+
+      - name: Validate proposed configuration
+        run: ./scripts/validate.sh
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if git diff --quiet -- config/versions.env; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: verify
+    if: needs.verify.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply verified pins
+        env:
+          NEW_OOYE: ${{ needs.verify.outputs.new_ooye }}
+          NEW_OOYE_COMMIT: ${{ needs.verify.outputs.new_ooye_commit }}
+          NEW_NODE: ${{ needs.verify.outputs.new_node }}
+          NEW_NODE_SHA: ${{ needs.verify.outputs.new_node_sha }}
+        run: |
+          sed -i \
+            -e "s/^OOYE_VERSION=.*/OOYE_VERSION=$NEW_OOYE/" \
+            -e "s/^OOYE_COMMIT=.*/OOYE_COMMIT=$NEW_OOYE_COMMIT/" \
+            -e "s/^NODE_VERSION=.*/NODE_VERSION=$NEW_NODE/" \
+            -e "s/^NODE_LINUX_X64_SHA256=.*/NODE_LINUX_X64_SHA256=$NEW_NODE_SHA/" \
+            config/versions.env
+          ./scripts/validate.sh
+
+      - name: Push update branch
+        env:
+          BRANCH: automation/dependency-updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/versions.env
+          git commit -m "Update OOYE and Node.js pins"
+          git fetch origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
+          git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
+
+      - name: Open or update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/dependency-updates
+          OLD_OOYE: ${{ needs.verify.outputs.old_ooye }}
+          NEW_OOYE: ${{ needs.verify.outputs.new_ooye }}
+          OLD_NODE: ${{ needs.verify.outputs.old_node }}
+          NEW_NODE: ${{ needs.verify.outputs.new_node }}
+        run: |
+          body=$(mktemp)
+          printf '%s\n' \
+            'Automated weekly dependency update for operator review.' \
+            '' \
+            "- OOYE: \`$OLD_OOYE\` -> \`$NEW_OOYE\`" \
+            "- Node.js 22: \`$OLD_NODE\` -> \`$NEW_NODE\`" \
+            '' \
+            'The read-only verification job checked the Node.js archive, OOYE checkout, and production dependency installation.' \
+            'Merging does not deploy to the VPS; run the documented update command manually.' \
+            "Update workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > "$body"
+
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [[ -z $existing ]]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "Update OOYE and Node.js pins" \
+              --body-file "$body"
+          else
+            gh pr edit "$existing" \
+              --title "Update OOYE and Node.js pins" \
+              --body-file "$body"
+          fi

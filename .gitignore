@@ -1,0 +1,18 @@
+# OOYE-generated secrets and state
+registration.yaml
+**/registration.yaml
+ooye.db
+ooye.db-*
+ooye.db.*
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Backups and temporary output
+backups/
+*.tar.gz
+*.tmp
